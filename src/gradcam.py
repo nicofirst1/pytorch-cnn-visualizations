@@ -3,17 +3,19 @@ Created on Thu Oct 26 11:06:51 2017
 
 @author: Utku Ozbulak - github.com/utkuozbulak
 """
+import copy
+
 from PIL import Image
 import numpy as np
 import torch
-
-from misc_functions import get_example_params, save_class_activation_images
+import matplotlib.cm as mpl_color_map
 
 
 class CamExtractor():
     """
         Extracts cam features from the model
     """
+
     def __init__(self, model, target_layer):
         self.model = model
         self.target_layer = target_layer
@@ -50,11 +52,12 @@ class GradCam():
     """
         Produces class activation map
     """
-    def __init__(self, model, target_layer):
+
+    def __init__(self, model, extractor):
         self.model = model
         self.model.eval()
         # Define extractor
-        self.extractor = CamExtractor(self.model, target_layer)
+        self.extractor = extractor
 
     def generate_cam(self, input_image, target_class=None):
         # Full forward pass
@@ -62,19 +65,19 @@ class GradCam():
         # model_output is the final output of the model (1, 1000)
         conv_output, model_output = self.extractor.forward_pass(input_image)
         if target_class is None:
-            target_class = np.argmax(model_output.data.numpy())
+            target_class = np.argmax(model_output.cpu().data.numpy())
         # Target for backprop
-        one_hot_output = torch.FloatTensor(1, model_output.size()[-1]).zero_()
-        one_hot_output[0][target_class] = 1
+        one_hot_output = torch.FloatTensor(model_output.size()).zero_().to(model_output.device)
+        one_hot_output[target_class][0] = 1
         # Zero grads
         self.model.features.zero_grad()
         self.model.classifier.zero_grad()
         # Backward pass with specified target
         model_output.backward(gradient=one_hot_output, retain_graph=True)
         # Get hooked gradients
-        guided_gradients = self.extractor.gradients.data.numpy()[0]
+        guided_gradients = self.extractor.gradients.cpu().data.numpy()
         # Get convolution outputs
-        target = conv_output.data.numpy()[0]
+        target = conv_output.cpu().data.numpy()[0]
         # Get weights from gradients
         weights = np.mean(guided_gradients, axis=(1, 2))  # Take averages for each gradient
         # Create empty numpy array for cam
@@ -87,7 +90,7 @@ class GradCam():
         cam = (cam - np.min(cam)) / (np.max(cam) - np.min(cam))  # Normalize between 0-1
         cam = np.uint8(cam * 255)  # Scale between 0-255 to visualize
         cam = np.uint8(Image.fromarray(cam).resize((input_image.shape[2],
-                       input_image.shape[3]), Image.ANTIALIAS))/255
+                                                    input_image.shape[3]), Image.ANTIALIAS)) / 255
         # ^ I am extremely unhappy with this line. Originally resizing was done in cv2 which
         # supports resizing numpy matrices with antialiasing, however,
         # when I moved the repository to PIL, this option was out of the window.
@@ -101,15 +104,32 @@ class GradCam():
         return cam
 
 
-if __name__ == '__main__':
-    # Get params
-    target_example = 0  # Snake
-    (original_image, prep_img, target_class, file_name_to_export, pretrained_model) =\
-        get_example_params(target_example)
-    # Grad cam
-    grad_cam = GradCam(pretrained_model, target_layer=11)
-    # Generate cam mask
-    cam = grad_cam.generate_cam(prep_img, target_class)
-    # Save mask
-    save_class_activation_images(original_image, cam, file_name_to_export)
-    print('Grad cam completed')
+def apply_colormap_on_image(org_im, activation, colormap_name):
+    """
+        Apply heatmap on image
+    Args:
+        org_img (PIL img): Original image
+        activation_map (numpy arr): Activation map (grayscale) 0-255
+        colormap_name (str): Name of the colormap
+    """
+    # Get colormap
+    color_map = mpl_color_map.get_cmap(colormap_name)
+
+    if len(activation.shape)==3:
+        rgb_weights = [0.2989, 0.5870, 0.1140]
+        activation = np.dot(activation[..., :3], rgb_weights)
+
+    no_trans_heatmap = color_map(activation)
+    # Change alpha channel in colormap to make sure original image is displayed
+    heatmap = copy.copy(no_trans_heatmap)
+    heatmap[:, :,  3] = 0.4
+    heatmap = Image.fromarray((heatmap * 255).astype(np.uint8))
+    no_trans_heatmap = Image.fromarray((no_trans_heatmap * 255).astype(np.uint8))
+
+    # Apply heatmap on iamge
+    heatmap_on_image = Image.new("RGBA", org_im.size)
+    heatmap_on_image = Image.alpha_composite(heatmap_on_image, org_im.convert('RGBA'))
+    heatmap_on_image = Image.alpha_composite(heatmap_on_image, heatmap)
+    return no_trans_heatmap, heatmap_on_image
+
+
