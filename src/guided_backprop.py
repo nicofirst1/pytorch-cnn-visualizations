@@ -4,26 +4,30 @@ Created on Thu Oct 26 11:23:47 2017
 @author: Utku Ozbulak - github.com/utkuozbulak
 """
 import torch
+from PIL import Image
 from torch.nn import ReLU
 
-from misc_functions import (get_example_params,
+from .misc_functions import (get_example_params,
                             convert_to_grayscale,
                             save_gradient_images,
                             get_positive_negative_saliency)
+
+import numpy as np
 
 
 class GuidedBackprop():
     """
        Produces gradients generated with guided back propagation from the given image
     """
-    def __init__(self, model):
+    def __init__(self, model, extractor):
         self.model = model
         self.gradients = None
         self.forward_relu_outputs = []
         # Put model in evaluation mode
-        self.model.eval()
         self.update_relus()
         self.hook_layers()
+        self.extractor = extractor
+        self.name = "GuidedBackprop"
 
     def hook_layers(self):
         def hook_function(module, grad_in, grad_out):
@@ -61,19 +65,30 @@ class GuidedBackprop():
                 module.register_backward_hook(relu_backward_hook_function)
                 module.register_forward_hook(relu_forward_hook_function)
 
-    def generate_gradients(self, input_image, target_class):
+    def generate_cam(self, input_image, target_class=None):
+        self.model.eval()
+        conv_output, model_output = self.extractor.forward_pass(input_image)
+        if target_class is None:
+            target_class = np.argmax(model_output.cpu().data.numpy())
         # Forward pass
-        model_output = self.model(input_image)
         # Zero gradients
         self.model.zero_grad()
         # Target for backprop
-        one_hot_output = torch.FloatTensor(1, model_output.size()[-1]).zero_()
+        one_hot_output = torch.FloatTensor(1, model_output.size()[-1]).zero_().to(input_image.device)
         one_hot_output[0][target_class] = 1
         # Backward pass
         model_output.backward(gradient=one_hot_output)
         # Convert Pytorch variable to numpy array
         # [0] to get rid of the first channel (1,3,224,224)
-        gradients_as_arr = self.gradients.data.numpy()[0]
+        gradients_as_arr = self.gradients.cpu().data.numpy()[0]
+
+        # can't resize third dimension with 3 color channels, so bring to gray
+        if gradients_as_arr.shape[-1] % 3 != 0:
+            gradients_as_arr = gradients_as_arr.reshape((gradients_as_arr.shape[0], -1))
+
+        gradients_as_arr = gradients_as_arr.astype(np.uint8)
+        gradients_as_arr = np.uint8(Image.fromarray(gradients_as_arr).resize((input_image.shape[2],
+                                                    input_image.shape[3]), Image.ANTIALIAS)) / 255
         return gradients_as_arr
 
 

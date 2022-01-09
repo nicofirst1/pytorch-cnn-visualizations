@@ -3,13 +3,13 @@ Created on Thu Oct 21 11:09:09 2017
 
 @author: Utku Ozbulak - github.com/utkuozbulak
 """
-import os
 import copy
-import numpy as np
-from PIL import Image, ImageFilter
-import matplotlib.cm as mpl_color_map
+import os
 
+import matplotlib.cm as mpl_color_map
+import numpy as np
 import torch
+from PIL import Image
 from torch.autograd import Variable
 from torchvision import models
 
@@ -32,7 +32,7 @@ def convert_to_grayscale(im_as_arr):
     return grayscale_im
 
 
-def save_gradient_images(gradient, file_name):
+def save_gradient_images(gradient, file_name, file_dir):
     """
         Exports the original gradient image
 
@@ -40,13 +40,13 @@ def save_gradient_images(gradient, file_name):
         gradient (np arr): Numpy array of the gradient with shape (3, 224, 224)
         file_name (str): File name to be exported
     """
-    if not os.path.exists('../results'):
-        os.makedirs('../results')
+    if not os.path.exists(file_dir):
+        os.makedirs(file_dir)
     # Normalize
     gradient = gradient - gradient.min()
-    gradient /= gradient.max()
+    gradient = gradient / gradient.max()
     # Save image
-    path_to_file = os.path.join('../results', file_name + '.jpg')
+    path_to_file = os.path.join(file_dir, file_name + '.jpg')
     save_image(gradient, path_to_file)
 
 
@@ -64,13 +64,13 @@ def save_class_activation_images(org_img, activation_map, file_name):
     # Grayscale activation map
     heatmap, heatmap_on_image = apply_colormap_on_image(org_img, activation_map, 'hsv')
     # Save colored heatmap
-    path_to_file = os.path.join('../results', file_name+'_Cam_Heatmap.png')
+    path_to_file = os.path.join('../results', file_name + '_Cam_Heatmap.png')
     save_image(heatmap, path_to_file)
     # Save heatmap on iamge
-    path_to_file = os.path.join('../results', file_name+'_Cam_On_Image.png')
+    path_to_file = os.path.join('../results', file_name + '_Cam_On_Image.png')
     save_image(heatmap_on_image, path_to_file)
     # SAve grayscale heatmap
-    path_to_file = os.path.join('../results', file_name+'_Cam_Grayscale.png')
+    path_to_file = os.path.join('../results', file_name + '_Cam_Grayscale.png')
     save_image(activation_map, path_to_file)
 
 
@@ -88,8 +88,8 @@ def apply_colormap_on_image(org_im, activation, colormap_name):
     # Change alpha channel in colormap to make sure original image is displayed
     heatmap = copy.copy(no_trans_heatmap)
     heatmap[:, :, 3] = 0.4
-    heatmap = Image.fromarray((heatmap*255).astype(np.uint8))
-    no_trans_heatmap = Image.fromarray((no_trans_heatmap*255).astype(np.uint8))
+    heatmap = Image.fromarray((heatmap * 255).astype(np.uint8))
+    no_trans_heatmap = Image.fromarray((no_trans_heatmap * 255).astype(np.uint8))
 
     # Apply heatmap on iamge
     heatmap_on_image = Image.new("RGBA", org_im.size)
@@ -121,7 +121,11 @@ def format_np_output(np_arr):
     # Phase/Case 4: NP arr is normalized between 0-1
     # Result: Multiply with 255 and change type to make it saveable by PIL
     if np.max(np_arr) <= 1:
-        np_arr = (np_arr*255).astype(np.uint8)
+        np_arr = (np_arr * 255).astype(np.uint8)
+
+    # remove alpha channel if present
+    if np_arr.shape[-1] == 4:
+        np_arr = np_arr[..., :3]
     return np_arr
 
 
@@ -152,7 +156,7 @@ def preprocess_image(pil_im, resize_im=True):
     mean = [0.485, 0.456, 0.406]
     std = [0.229, 0.224, 0.225]
 
-    #ensure or transform incoming image to PIL image
+    # ensure or transform incoming image to PIL image
     if type(pil_im) != Image.Image:
         try:
             pil_im = Image.fromarray(pil_im)
@@ -188,7 +192,7 @@ def recreate_image(im_as_var):
         recreated_im (numpy arr): Recreated image in array
     """
     reverse_mean = [-0.485, -0.456, -0.406]
-    reverse_std = [1/0.229, 1/0.224, 1/0.225]
+    reverse_std = [1 / 0.229, 1 / 0.224, 1 / 0.225]
     recreated_im = copy.copy(im_as_var.data.numpy()[0])
     for c in range(3):
         recreated_im[c] /= reverse_std[c]
@@ -235,7 +239,7 @@ def get_example_params(example_index):
                     ('../input_images/spider.png', 72))
     img_path = example_list[example_index][0]
     target_class = example_list[example_index][1]
-    file_name_to_export = img_path[img_path.rfind('/')+1:img_path.rfind('.')]
+    file_name_to_export = img_path[img_path.rfind('/') + 1:img_path.rfind('.')]
     # Read image
     original_image = Image.open(img_path).convert('RGB')
     # Process image

@@ -21,7 +21,7 @@ class ScoreCam():
         self.model.eval()
         # Define extractor
         self.extractor = extractor
-        self.name = "ScoreCam"
+        self.name = f"ScoreCam_layer{extractor.target_layer}"
 
     def generate_cam(self, input_image, target_class=None):
         # Full forward pass
