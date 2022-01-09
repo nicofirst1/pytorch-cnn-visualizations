@@ -16,12 +16,12 @@ class ScoreCam():
     """
         Produces class activation map
     """
-    def __init__(self, model, extractor):
+    def __init__(self, model, extractor, name):
         self.model = model
         self.model.eval()
         # Define extractor
         self.extractor = extractor
-        self.name = f"ScoreCam_layer{extractor.target_layer}"
+        self.name = f"{name}_layer{extractor.target_layer}"
 
     def generate_cam(self, input_image, target_class=None):
         # Full forward pass
