@@ -52,16 +52,3 @@ class LayerCam():
 
         return cam
 
-
-if __name__ == '__main__':
-    # Get params
-    target_example = 0  # Snake
-    (original_image, prep_img, target_class, file_name_to_export, pretrained_model) =\
-        get_example_params(target_example)
-    # Layer cam
-    layer_cam = LayerCam(pretrained_model, target_layer=9)
-    # Generate cam mask
-    cam = layer_cam.generate_cam(prep_img, target_class)
-    # Save mask
-    save_class_activation_images(original_image, cam, file_name_to_export)
-    print('Layer cam completed')
